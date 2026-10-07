@@ -3,7 +3,11 @@
 > 專為 **MSU2 MINI (160×80)** USB 智慧小螢幕打造，即時顯示 **Antigravity (Google / Claude / GPT)** 模型的剩餘用量與冷卻時間。  
 > 採用經典駭客任務綠（Matrix Rain）像素級平滑數碼雨背景，極致輕量、無感常駐。
 
-![Matrix Preview](matrix_pure_green_preview.png)
+## 📸 實體使用效果 (Real Hardware Showcase)
+
+| 實體近照展示 (Close-up) | 筆電搭配全貌 (Overview) | 數位渲染預覽 (Digital Render) |
+| :---: | :---: | :---: |
+| ![Device Close-up](device_closeup.jpg) | ![Device Overview](device_overview.jpg) | ![Matrix Preview](matrix_pure_green_preview.png) |
 
 ---
 
