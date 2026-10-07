@@ -1,0 +1,15 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Runtime & State Files
+*.log
+*.lock
+dual_usage.json
+last_usage.json
+
+# Test & Preview Artefacts
+test_*.png
+test_*.gif
+*test*
