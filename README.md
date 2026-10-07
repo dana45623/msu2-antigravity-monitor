@@ -31,6 +31,7 @@
 ## 🛠️ 硬體與環境需求
 
 - **硬體**：MSU2 MINI 160×80 USB 串口液晶小螢幕（晶片通常為 CH340）
+  - [硬體購買參考連結（拼多多/淘寶等平台）](https://mobile.yangkeduo.com/goods.html?ps=0iWcjgJRVK)
 - **作業系統**：Windows 10 / 11
 - **Python**：Python 3.10+
 - **必要套件**：
