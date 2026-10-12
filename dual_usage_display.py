@@ -117,8 +117,8 @@ class MatrixRain:
         self._draw_value(d, g_val, 7, flash_color if flash_g else matrix_green)
 
         # Line 2: CLAUDE
-        d.text((4, 47), 'CLAUDE', font=self.f_main, fill=matrix_green, stroke_width=2, stroke_fill=(0, 0, 0))
-        self._draw_value(d, c_val, 47, flash_color if flash_c else matrix_green)
+        d.text((4, 48), 'CLAUDE', font=self.f_main, fill=matrix_green, stroke_width=2, stroke_fill=(0, 0, 0))
+        self._draw_value(d, c_val, 48, flash_color if flash_c else matrix_green)
 
         return im.convert('RGB')
 
@@ -227,17 +227,18 @@ def compress_pixels_payload(pix):
 def send_pixels(s, pix):
     payload = compress_pixels_payload(pix)
     s.write(payload)
-    wait_mcu_ready(s, timeout=0.6)
+    resp = wait_mcu_ready(s, timeout=0.6)
+    return len(resp) >= 6
 
 
 def handshake(s, force=False):
-    """Handshake when device broadcasts \\x00MSN01."""
+    """Handshake with device (send \\x00MSNCN to unlock MCU)."""
     try:
-        time.sleep(0.25)
+        time.sleep(0.15)
         rx = drain_rx(s)
         if force or (b'MSN' in rx):
             s.write(b'\x00MSNCN')
-            time.sleep(0.25)
+            time.sleep(0.15)
             drain_rx(s)
             return True
     except Exception:
