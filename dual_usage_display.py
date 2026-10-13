@@ -117,8 +117,8 @@ class MatrixRain:
         self._draw_value(d, g_val, 7, flash_color if flash_g else matrix_green)
 
         # Line 2: CLAUDE
-        d.text((4, 48), 'CLAUDE', font=self.f_main, fill=matrix_green, stroke_width=2, stroke_fill=(0, 0, 0))
-        self._draw_value(d, c_val, 48, flash_color if flash_c else matrix_green)
+        d.text((4, 50), 'CLAUDE', font=self.f_main, fill=matrix_green, stroke_width=2, stroke_fill=(0, 0, 0))
+        self._draw_value(d, c_val, 50, flash_color if flash_c else matrix_green)
 
         return im.convert('RGB')
 
