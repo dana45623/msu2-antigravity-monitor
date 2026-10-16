@@ -402,15 +402,16 @@ class AntigravityUsageProvider(UsageProvider):
 
         g_frac = gemini_info['frac'] if gemini_info else 1.0
         c_frac = claude_info['frac'] if claude_info else 0.0
-        a_frac = argon_info['frac'] if argon_info else 1.0
+        a_frac = argon_info['frac'] if argon_info else None
+        argon_avail = argon_info is not None
 
         g_pct = gemini_info['pct'] if gemini_info else 100
         c_pct = claude_info['pct'] if claude_info else 0
-        a_pct = argon_info['pct'] if argon_info else 100
+        a_pct = argon_info['pct'] if argon_info else None
 
         g_str = gemini_info['display_str'] if gemini_info else f"{g_frac * 100:.1f}%"
         c_str = claude_info['display_str'] if claude_info else f"{c_frac * 100:.1f}%"
-        a_str = argon_info['display_str'] if argon_info else f"{a_frac * 100:.1f}%"
+        a_str = argon_info['display_str'] if argon_info else None
 
         return {
             'tier': '5H_LIMIT',
@@ -421,6 +422,7 @@ class AntigravityUsageProvider(UsageProvider):
             'gpt_left': c_pct,
             'gemini_left': g_pct,
             'argon_left': a_pct,
+            'argon_available': argon_avail,
             'claude_frac': c_frac,
             'gemini_frac': g_frac,
             'argon_frac': a_frac,

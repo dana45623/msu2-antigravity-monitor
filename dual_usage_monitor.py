@@ -117,10 +117,10 @@ class RealtimeUsageTracker:
                 data = self.provider.get()
                 g_str = data.get('gemini_str', f"{data.get('gemini_left', 100)}%")
                 c_str = data.get('claude_str', f"{data.get('claude_left', 0)}%")
-                a_str = data.get('argon_str', f"{data.get('argon_left', 100)}%")
+                a_str = data.get('argon_str')
                 g_frac = data.get('gemini_frac', 1.0)
                 c_frac = data.get('claude_frac', 0.0)
-                a_frac = data.get('argon_frac', 1.0)
+                a_frac = data.get('argon_frac')
 
                 with self.lock:
                     if last_g is not None and abs(g_frac - last_g) > 0.0001:
@@ -129,7 +129,7 @@ class RealtimeUsageTracker:
                     if last_c is not None and abs(c_frac - last_c) > 0.0001:
                         self.flash_c = 4
                         log(f'[REALTIME TOKEN PUSH] Claude (5h): {last_c*100:.2f}% -> {c_frac*100:.2f}% ({c_str})')
-                    if last_a is not None and abs(a_frac - last_a) > 0.0001:
+                    if a_frac is not None and last_a is not None and abs(a_frac - last_a) > 0.0001:
                         self.flash_a = 4
                         log(f'[REALTIME TOKEN PUSH] Argon (Weekly): {last_a*100:.2f}% -> {a_frac*100:.2f}% ({a_str})')
 
