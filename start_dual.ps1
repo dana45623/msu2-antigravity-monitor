@@ -12,6 +12,9 @@ Start-Sleep -Milliseconds 600
 # 2. Locate pythonw.exe
 $pyw = $null
 $candidates = @(
+    "$env:LOCALAPPDATA\Programs\Python\Python312\pythonw.exe",
+    "$env:LOCALAPPDATA\Programs\Python\Python313\pythonw.exe",
+    (Get-Item "$env:LOCALAPPDATA\Programs\Python\Python*\pythonw.exe" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName -ErrorAction SilentlyContinue),
     "$env:LOCALAPPDATA\Python\pythoncore-3.14-64\pythonw.exe",
     (Get-Item "$env:LOCALAPPDATA\Python\pythoncore-*\pythonw.exe" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName -ErrorAction SilentlyContinue),
     ((Get-Command python.exe -ErrorAction SilentlyContinue).Path -replace 'python\.exe$', 'pythonw.exe')

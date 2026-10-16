@@ -35,9 +35,9 @@ class MatrixRain:
         self.h = h
         self.chars = '0123456789ABCDEFXY$#@<>:;*+=-!%?&Z'
         self.font_rain = get_matrix_font(8, bold=True)
-        self.f_main = get_matrix_font(21, bold=True)
-        self.f_num = get_matrix_font(21, bold=True)
-        self.f_dt = get_matrix_font(15, bold=True)
+        self.f_main = get_matrix_font(15, bold=True)
+        self.f_num = get_matrix_font(15, bold=True)
+        self.f_dt = get_matrix_font(11, bold=True)
         self.cols = []
         for _ in range(COLS):
             y = random.uniform(-50, h)
@@ -64,13 +64,13 @@ class MatrixRain:
             d_str, t_str = val.split(' ', 1)
             w1 = d.textbbox((0, 0), d_str, font=self.f_dt)[2]
             w2 = d.textbbox((0, 0), t_str, font=self.f_dt)[2]
-            d.text((self.w - 4 - w1, y_base - 5), d_str, font=self.f_dt, fill=color, stroke_width=2, stroke_fill=(0, 0, 0))
-            d.text((self.w - 4 - w2, y_base + 12), t_str, font=self.f_dt, fill=color, stroke_width=2, stroke_fill=(0, 0, 0))
+            d.text((self.w - 4 - w1, y_base - 4), d_str, font=self.f_dt, fill=color, stroke_width=2, stroke_fill=(0, 0, 0))
+            d.text((self.w - 4 - w2, y_base + 7), t_str, font=self.f_dt, fill=color, stroke_width=2, stroke_fill=(0, 0, 0))
         else:
             vw = d.textbbox((0, 0), val, font=self.f_num)[2]
             d.text((self.w - 4 - vw, y_base), val, font=self.f_num, fill=color, stroke_width=2, stroke_fill=(0, 0, 0))
 
-    def render_frame(self, g_val='80.4%', c_val='0.0%', flash_g=False, flash_c=False):
+    def render_frame(self, g_val='80.4%', c_val='0.0%', a_val='100.0%', flash_g=False, flash_c=False, flash_a=False):
         base = Image.new('RGBA', (self.w, self.h), (0, 0, 0, 255))
         rain_im = Image.new('RGBA', (self.w, self.h), (0, 0, 0, 0))
         d_rain = ImageDraw.Draw(rain_im)
@@ -98,12 +98,14 @@ class MatrixRain:
 
         im = Image.alpha_composite(base, rain_im)
 
-        # 2. Semi-translucent backing overlay (alpha=70) + Sharp green divider
+        # 2. Semi-translucent backing overlays + divider lines for 3 rows
         overlay = Image.new('RGBA', (self.w, self.h), (0, 0, 0, 0))
         d_ov = ImageDraw.Draw(overlay)
-        d_ov.rounded_rectangle([(1, 4), (self.w - 2, 36)], radius=2, fill=(0, 0, 0, 70))
-        d_ov.rounded_rectangle([(1, 44), (self.w - 2, 76)], radius=2, fill=(0, 0, 0, 70))
-        d_ov.line([(0, 39), (self.w - 1, 39)], fill=(0, 180, 48, 230), width=1)
+        d_ov.rounded_rectangle([(1, 2), (self.w - 2, 24)], radius=2, fill=(0, 0, 0, 75))
+        d_ov.rounded_rectangle([(1, 28), (self.w - 2, 50)], radius=2, fill=(0, 0, 0, 75))
+        d_ov.rounded_rectangle([(1, 54), (self.w - 2, 76)], radius=2, fill=(0, 0, 0, 75))
+        d_ov.line([(0, 26), (self.w - 1, 26)], fill=(0, 180, 48, 200), width=1)
+        d_ov.line([(0, 52), (self.w - 1, 52)], fill=(0, 180, 48, 200), width=1)
 
         im = Image.alpha_composite(im, overlay)
         d = ImageDraw.Draw(im)
@@ -113,12 +115,16 @@ class MatrixRain:
         flash_color = (230, 255, 230)
 
         # Line 1: GEMINI
-        d.text((4, 7), 'GEMINI', font=self.f_main, fill=matrix_green, stroke_width=2, stroke_fill=(0, 0, 0))
-        self._draw_value(d, g_val, 7, flash_color if flash_g else matrix_green)
+        d.text((4, 5), 'GEMINI', font=self.f_main, fill=matrix_green, stroke_width=2, stroke_fill=(0, 0, 0))
+        self._draw_value(d, g_val, 5, flash_color if flash_g else matrix_green)
 
         # Line 2: CLAUDE
-        d.text((4, 50), 'CLAUDE', font=self.f_main, fill=matrix_green, stroke_width=2, stroke_fill=(0, 0, 0))
-        self._draw_value(d, c_val, 50, flash_color if flash_c else matrix_green)
+        d.text((4, 31), 'CLAUDE', font=self.f_main, fill=matrix_green, stroke_width=2, stroke_fill=(0, 0, 0))
+        self._draw_value(d, c_val, 31, flash_color if flash_c else matrix_green)
+
+        # Line 3: ARGON
+        d.text((4, 57), 'ARGON', font=self.f_main, fill=matrix_green, stroke_width=2, stroke_fill=(0, 0, 0))
+        self._draw_value(d, a_val, 57, flash_color if flash_a else matrix_green)
 
         return im.convert('RGB')
 

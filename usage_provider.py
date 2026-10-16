@@ -316,6 +316,7 @@ class AntigravityUsageProvider(UsageProvider):
 
         gemini_info = None
         claude_info = None
+        argon_info = None
 
         for g in groups:
             g_name = str(g.get('displayName') or '').lower()
@@ -329,6 +330,27 @@ class AntigravityUsageProvider(UsageProvider):
                     bucket_5h = b
                 elif win == 'weekly' or bid.endswith('-weekly'):
                     bucket_weekly = b
+
+            # Argon only has a weekly bucket (gemini-argon-wtu-weekly)
+            if 'argon' in g_name or any('argon' in str(b.get('bucketId') or '').lower() for b in buckets):
+                target_b = bucket_5h or bucket_weekly or (buckets[0] if buckets else None)
+                if target_b:
+                    raw_f = float(target_b.get('remainingFraction', 0.0))
+                    rst = cls._format_reset(target_b.get('resetTime'))
+                    disabled = bool(target_b.get('disabled', False)) or raw_f <= 0.0
+                    frac = 0.0 if disabled else max(0.0, min(1.0, raw_f))
+                    pct = max(0, min(100, int(round(frac * 100))))
+                    disp = rst if disabled else f"{frac * 100:.1f}%"
+                    argon_info = {
+                        'pct': pct,
+                        'frac': frac,
+                        'raw': raw_f,
+                        'disabled': disabled,
+                        'reset': rst,
+                        'display_str': disp,
+                        'bucket_id': target_b.get('bucketId'),
+                    }
+                continue
 
             if not bucket_5h:
                 continue
@@ -380,10 +402,15 @@ class AntigravityUsageProvider(UsageProvider):
 
         g_frac = gemini_info['frac'] if gemini_info else 1.0
         c_frac = claude_info['frac'] if claude_info else 0.0
+        a_frac = argon_info['frac'] if argon_info else 1.0
+
         g_pct = gemini_info['pct'] if gemini_info else 100
         c_pct = claude_info['pct'] if claude_info else 0
+        a_pct = argon_info['pct'] if argon_info else 100
+
         g_str = gemini_info['display_str'] if gemini_info else f"{g_frac * 100:.1f}%"
         c_str = claude_info['display_str'] if claude_info else f"{c_frac * 100:.1f}%"
+        a_str = argon_info['display_str'] if argon_info else f"{a_frac * 100:.1f}%"
 
         return {
             'tier': '5H_LIMIT',
@@ -393,12 +420,16 @@ class AntigravityUsageProvider(UsageProvider):
             'claude_left': c_pct,
             'gpt_left': c_pct,
             'gemini_left': g_pct,
+            'argon_left': a_pct,
             'claude_frac': c_frac,
             'gemini_frac': g_frac,
+            'argon_frac': a_frac,
             'claude_str': c_str,
             'gemini_str': g_str,
+            'argon_str': a_str,
             'reset': claude_info['reset'] if claude_info else '--',
             'gemini_reset': gemini_info['reset'] if gemini_info else '--',
+            'argon_reset': argon_info['reset'] if argon_info else '--',
         }
 
     @classmethod
