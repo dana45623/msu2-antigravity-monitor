@@ -75,30 +75,34 @@ class MatrixRain:
             vw = d.textbbox((0, 0), val, font=font_num)[2]
             d.text((self.w - 4 - vw, y_base), val, font=font_num, fill=color, stroke_width=2, stroke_fill=(0, 0, 0))
 
-    def render_frame(self, g_val='80.4%', c_val='0.0%', a_val=None, flash_g=False, flash_c=False, flash_a=False):
+    def render_rows(self, rows):
+        """
+        Render dynamic number of rows (2 or 3 rows).
+        rows: list of tuples: (label, val, flash_bool)
+        If len(rows) >= 3: 3-row layout (15pt font)
+        If len(rows) <= 2: 2-row layout (21pt font)
+        """
         base = Image.new('RGBA', (self.w, self.h), (0, 0, 0, 255))
         rain_im = Image.new('RGBA', (self.w, self.h), (0, 0, 0, 0))
         d_rain = ImageDraw.Draw(rain_im)
 
-        # 1. Pixel-by-pixel scrolling streams
         for i, col in enumerate(self.cols):
             x = i * COL_W + 1
             y_head = col['y']
             for j in range(col['len']):
-                y = int(y_head - j * 8)  # Rendered at continuous pixel positions
+                y = int(y_head - j * 8)
                 if -8 <= y < self.h:
                     ch = col['chars'][j]
                     if j == 0:
-                        col_rgba = (225, 255, 225, 195)  # Bright glowing head
+                        col_rgba = (225, 255, 225, 195)
                     elif j < 3:
-                        col_rgba = (0, 255, 65, 175)     # Saturated Matrix green
+                        col_rgba = (0, 255, 65, 175)
                     elif j < 6:
-                        col_rgba = (0, 215, 55, 145)     # Mid green
+                        col_rgba = (0, 215, 55, 145)
                     elif j < 9:
-                        col_rgba = (0, 160, 40, 120)     # Visible deep green
+                        col_rgba = (0, 160, 40, 120)
                     else:
-                        col_rgba = (0, 110, 28, 95)      # Faint trail green
-
+                        col_rgba = (0, 110, 28, 95)
                     d_rain.text((x, y), ch, font=self.font_rain, fill=col_rgba)
 
         im = Image.alpha_composite(base, rain_im)
@@ -107,9 +111,8 @@ class MatrixRain:
         matrix_green = (0, 255, 65)
         flash_color = (230, 255, 230)
 
-        # Dynamic layout: 3-row if a_val is present, otherwise fallback to classic 2-row
-        if a_val is not None:
-            # 3-row mode (GEMINI, CLAUDE, ARGON)
+        if len(rows) >= 3:
+            # 3-row layout (GEMINI / CLAUDE / ARGON)
             d_ov.rounded_rectangle([(1, 2), (self.w - 2, 24)], radius=2, fill=(0, 0, 0, 75))
             d_ov.rounded_rectangle([(1, 28), (self.w - 2, 50)], radius=2, fill=(0, 0, 0, 75))
             d_ov.rounded_rectangle([(1, 54), (self.w - 2, 76)], radius=2, fill=(0, 0, 0, 75))
@@ -118,32 +121,36 @@ class MatrixRain:
             im = Image.alpha_composite(im, overlay)
             d = ImageDraw.Draw(im)
 
-            # Line 1: GEMINI
-            d.text((4, 5), 'GEMINI', font=self.f3_main, fill=matrix_green, stroke_width=2, stroke_fill=(0, 0, 0))
-            self._draw_value(d, g_val, 5, flash_color if flash_g else matrix_green, self.f3_num, self.f3_dt, (-4, 7))
-
-            # Line 2: CLAUDE
-            d.text((4, 31), 'CLAUDE', font=self.f3_main, fill=matrix_green, stroke_width=2, stroke_fill=(0, 0, 0))
-            self._draw_value(d, c_val, 31, flash_color if flash_c else matrix_green, self.f3_num, self.f3_dt, (-4, 7))
-
-            # Line 3: ARGON
-            d.text((4, 57), 'ARGON', font=self.f3_main, fill=matrix_green, stroke_width=2, stroke_fill=(0, 0, 0))
-            self._draw_value(d, a_val, 57, flash_color if flash_a else matrix_green, self.f3_num, self.f3_dt, (-4, 7))
+            y_coords = [5, 31, 57]
+            for idx in range(3):
+                label, val, fl = rows[idx]
+                y_pos = y_coords[idx]
+                c = flash_color if fl else matrix_green
+                d.text((4, y_pos), label, font=self.f3_main, fill=matrix_green, stroke_width=2, stroke_fill=(0, 0, 0))
+                self._draw_value(d, val, y_pos, c, self.f3_num, self.f3_dt, (-4, 7))
         else:
-            # 2-row mode (GEMINI, CLAUDE in 21pt)
+            # 2-row layout (21pt main font, divider at y=39)
             d_ov.rounded_rectangle([(1, 4), (self.w - 2, 36)], radius=2, fill=(0, 0, 0, 70))
             d_ov.rounded_rectangle([(1, 44), (self.w - 2, 76)], radius=2, fill=(0, 0, 0, 70))
             d_ov.line([(0, 39), (self.w - 1, 39)], fill=(0, 180, 48, 230), width=1)
             im = Image.alpha_composite(im, overlay)
             d = ImageDraw.Draw(im)
 
-            # Line 1: GEMINI
-            d.text((4, 7), 'GEMINI', font=self.f2_main, fill=matrix_green, stroke_width=2, stroke_fill=(0, 0, 0))
-            self._draw_value(d, g_val, 7, flash_color if flash_g else matrix_green, self.f2_num, self.f2_dt, (-5, 12))
+            y_coords = [7, 50]
+            for idx in range(min(2, len(rows))):
+                label, val, fl = rows[idx]
+                y_pos = y_coords[idx]
+                c = flash_color if fl else matrix_green
+                d.text((4, y_pos), label, font=self.f2_main, fill=matrix_green, stroke_width=2, stroke_fill=(0, 0, 0))
+                self._draw_value(d, val, y_pos, c, self.f2_num, self.f2_dt, (-5, 12))
 
-            # Line 2: CLAUDE
-            d.text((4, 50), 'CLAUDE', font=self.f2_main, fill=matrix_green, stroke_width=2, stroke_fill=(0, 0, 0))
-            self._draw_value(d, c_val, 50, flash_color if flash_c else matrix_green, self.f2_num, self.f2_dt, (-5, 12))
+        return im.convert('RGB')
+
+    def render_frame(self, g_val='80.4%', c_val='0.0%', a_val=None, flash_g=False, flash_c=False, flash_a=False):
+        rows = [('GEMINI', g_val, flash_g), ('CLAUDE', c_val, flash_c)]
+        if a_val is not None:
+            rows.append(('ARGON', a_val, flash_a))
+        return self.render_rows(rows)
 
         return im.convert('RGB')
 

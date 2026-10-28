@@ -1,4 +1,5 @@
 # stop_dual.ps1: Stop Dual Usage Monitor
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force -ErrorAction SilentlyContinue
 $ErrorActionPreference = "SilentlyContinue"
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $lockFile = Join-Path $scriptDir "dual_usage_monitor.lock"

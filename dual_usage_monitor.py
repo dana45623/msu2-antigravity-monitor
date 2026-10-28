@@ -18,9 +18,10 @@ from dual_usage_display import (
 from usage_provider import AntigravityUsageProvider
 
 BASE = Path(__file__).resolve().parent
-LOCK_FILE = BASE / 'dual_usage_monitor.lock'
-DATA_FILE = BASE / 'dual_usage.json'
-LOG_FILE = BASE / 'dual_usage_monitor.log'
+LOG_DIR = BASE
+LOCK_FILE = LOG_DIR / 'dual_usage_monitor.lock'
+DATA_FILE = LOG_DIR / 'dual_usage.json'
+LOG_FILE = LOG_DIR / 'dual_usage_monitor.log'
 MAX_LOG = 512 * 1024
 
 
@@ -175,7 +176,7 @@ class RealtimeUsageTracker:
             if self.flash_g > 0: self.flash_g -= 1
             if self.flash_c > 0: self.flash_c -= 1
             if self.flash_a > 0: self.flash_a -= 1
-            return self.gemini_str, self.claude_str, self.argon_str, fg, fc, fa
+            return self.gemini_str, self.claude_str, self.argon_str, fg, fc, fa, self.gemini_frac, self.claude_frac, self.argon_frac
 
 
 def should_auto_rotate():
@@ -226,11 +227,38 @@ def run_monitor(port=None, fps=8.0, brightness=0.72, rotate=None):
                     continue
 
             # 2. Get latest usage state
-            g_str, c_str, a_str, flash_g, flash_c, flash_a = tracker.get_state()
+            g_str, c_str, a_str, flash_g, flash_c, flash_a, g_frac, c_frac, a_frac = tracker.get_state()
+
+            # Dynamic row selection:
+            # If all 3 models have quota > 0, show 3 rows.
+            # If any model has completely run out of quota (frac <= 0 or empty), drop it and show the remaining models in 2 rows.
+            rows = []
+            candidates = [
+                ('GEMINI', g_str, flash_g, g_frac),
+                ('CLAUDE', c_str, flash_c, c_frac),
+            ]
+            if a_str is not None and a_frac is not None:
+                candidates.append(('ARGON', a_str, flash_a, a_frac))
+
+            # Filter candidates that have remaining quota
+            has_quota = [c for c in candidates if (c[3] is not None and c[3] > 0.0001)]
+            
+            if len(candidates) == 3:
+                if len(has_quota) == 3:
+                    # All 3 have quota -> 3-row mode
+                    rows = [(c[0], c[1], c[2]) for c in candidates]
+                elif len(has_quota) == 2:
+                    # Exactly 1 ran out -> show the 2 with quota
+                    rows = [(c[0], c[1], c[2]) for c in has_quota]
+                else:
+                    # If 2 or all ran out, show top 2 candidates
+                    rows = [(c[0], c[1], c[2]) for c in candidates[:2]]
+            else:
+                rows = [(c[0], c[1], c[2]) for c in candidates[:2]]
 
             # 3. Update rain animation & render frame
             rain.update()
-            im = rain.render_frame(g_str, c_str, a_str, flash_g=flash_g, flash_c=flash_c, flash_a=flash_a)
+            im = rain.render_rows(rows)
             im_adj = apply_brightness(im, brightness=brightness)
             if rotate == 180:
                 im_adj = im_adj.rotate(180)

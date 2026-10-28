@@ -1,22 +1,33 @@
 # start_dual.ps1: Start the Gemini & Claude Dual Usage Monitor
 $ErrorActionPreference = "Stop"
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force -ErrorAction SilentlyContinue
+
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $scriptDir
 
 # 1. Stop any existing monitors or extenders
-& "$scriptDir\stop_dual.ps1" | Out-Null
-& "$scriptDir\stop_extender.ps1" | Out-Null
+try {
+    & powershell.exe -ExecutionPolicy Bypass -NoProfile -File "$scriptDir\stop_dual.ps1" | Out-Null
+} catch {
+    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -like "*dual_usage_monitor.py*" } |
+        ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+}
+
+try {
+    & powershell.exe -ExecutionPolicy Bypass -NoProfile -File "$scriptDir\stop_extender.ps1" | Out-Null
+} catch {}
 
 Start-Sleep -Milliseconds 600
 
 # 2. Locate pythonw.exe
 $pyw = $null
 $candidates = @(
+    "$env:LOCALAPPDATA\Python\pythoncore-3.14-64\pythonw.exe",
+    (Get-Item "$env:LOCALAPPDATA\Python\pythoncore-*\pythonw.exe" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName -ErrorAction SilentlyContinue),
     "$env:LOCALAPPDATA\Programs\Python\Python312\pythonw.exe",
     "$env:LOCALAPPDATA\Programs\Python\Python313\pythonw.exe",
     (Get-Item "$env:LOCALAPPDATA\Programs\Python\Python*\pythonw.exe" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName -ErrorAction SilentlyContinue),
-    "$env:LOCALAPPDATA\Python\pythoncore-3.14-64\pythonw.exe",
-    (Get-Item "$env:LOCALAPPDATA\Python\pythoncore-*\pythonw.exe" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName -ErrorAction SilentlyContinue),
     ((Get-Command python.exe -ErrorAction SilentlyContinue).Path -replace 'python\.exe$', 'pythonw.exe')
 ) | Where-Object { $_ -and (Test-Path $_) -and ($_ -notlike '*WindowsApps*') }
 
