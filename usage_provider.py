@@ -337,7 +337,8 @@ class AntigravityUsageProvider(UsageProvider):
                 if target_b:
                     raw_f = float(target_b.get('remainingFraction', 0.0))
                     rst = cls._format_reset(target_b.get('resetTime'))
-                    disabled = bool(target_b.get('disabled', False)) or raw_f <= 0.0
+                    # Treat < 0.005 (rounds to 0% in Antigravity UI) as exhausted
+                    disabled = bool(target_b.get('disabled', False)) or raw_f < 0.005
                     frac = 0.0 if disabled else max(0.0, min(1.0, raw_f))
                     pct = max(0, min(100, int(round(frac * 100))))
                     disp = rst if disabled else f"{frac * 100:.1f}%"
@@ -360,10 +361,12 @@ class AntigravityUsageProvider(UsageProvider):
             rst_5h = cls._format_reset(bucket_5h.get('resetTime'))
 
             raw_weekly = float(bucket_weekly.get('remainingFraction', 0.0)) if bucket_weekly else 1.0
+            disabled_weekly = bool(bucket_weekly.get('disabled', False)) if bucket_weekly else False
             rst_weekly = cls._format_reset(bucket_weekly.get('resetTime')) if bucket_weekly else rst_5h
 
-            weekly_exhausted = disabled_5h or (bucket_weekly is not None and raw_weekly <= 0.0)
-            five_h_exhausted = (not weekly_exhausted) and (raw_5h <= 0.0)
+            # If weekly remainingFraction rounds to 0% (< 0.005) or is disabled, the model cannot be used even if 5h shows 100%
+            weekly_exhausted = disabled_5h or disabled_weekly or (bucket_weekly is not None and raw_weekly < 0.005)
+            five_h_exhausted = (not weekly_exhausted) and (raw_5h < 0.0005)
 
             if weekly_exhausted:
                 frac = 0.0

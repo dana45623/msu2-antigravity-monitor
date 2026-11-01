@@ -230,9 +230,8 @@ def run_monitor(port=None, fps=8.0, brightness=0.72, rotate=None):
             g_str, c_str, a_str, flash_g, flash_c, flash_a, g_frac, c_frac, a_frac = tracker.get_state()
 
             # Dynamic row selection:
-            # If all 3 models have quota > 0, show 3 rows.
-            # If any model has completely run out of quota (frac <= 0 or empty), drop it and show the remaining models in 2 rows.
-            rows = []
+            # - Only models with remaining quota (frac > 0.0001) are displayed (3, 2, or 1 row).
+            # - If ALL models are exhausted (0 remaining), display all available models with their next reset date/time.
             candidates = [
                 ('GEMINI', g_str, flash_g, g_frac),
                 ('CLAUDE', c_str, flash_c, c_frac),
@@ -240,21 +239,12 @@ def run_monitor(port=None, fps=8.0, brightness=0.72, rotate=None):
             if a_str is not None and a_frac is not None:
                 candidates.append(('ARGON', a_str, flash_a, a_frac))
 
-            # Filter candidates that have remaining quota
             has_quota = [c for c in candidates if (c[3] is not None and c[3] > 0.0001)]
-            
-            if len(candidates) == 3:
-                if len(has_quota) == 3:
-                    # All 3 have quota -> 3-row mode
-                    rows = [(c[0], c[1], c[2]) for c in candidates]
-                elif len(has_quota) == 2:
-                    # Exactly 1 ran out -> show the 2 with quota
-                    rows = [(c[0], c[1], c[2]) for c in has_quota]
-                else:
-                    # If 2 or all ran out, show top 2 candidates
-                    rows = [(c[0], c[1], c[2]) for c in candidates[:2]]
+            if len(has_quota) >= 1:
+                rows = [(c[0], c[1], c[2]) for c in has_quota]
             else:
-                rows = [(c[0], c[1], c[2]) for c in candidates[:2]]
+                # All models exhausted -> display reset times for all models
+                rows = [(c[0], c[1], c[2]) for c in candidates]
 
             # 3. Update rain animation & render frame
             rain.update()

@@ -128,6 +128,17 @@ class MatrixRain:
                 c = flash_color if fl else matrix_green
                 d.text((4, y_pos), label, font=self.f3_main, fill=matrix_green, stroke_width=2, stroke_fill=(0, 0, 0))
                 self._draw_value(d, val, y_pos, c, self.f3_num, self.f3_dt, (-4, 7))
+        elif len(rows) == 1:
+            # 1-row layout: single remaining model centered vertically, rest left open for Matrix rain
+            d_ov.rounded_rectangle([(1, 24), (self.w - 2, 56)], radius=2, fill=(0, 0, 0, 70))
+            im = Image.alpha_composite(im, overlay)
+            d = ImageDraw.Draw(im)
+
+            label, val, fl = rows[0]
+            y_pos = 29
+            c = flash_color if fl else matrix_green
+            d.text((4, y_pos), label, font=self.f2_main, fill=matrix_green, stroke_width=2, stroke_fill=(0, 0, 0))
+            self._draw_value(d, val, y_pos, c, self.f2_num, self.f2_dt, (-5, 12))
         else:
             # 2-row layout (21pt main font, divider at y=39)
             d_ov.rounded_rectangle([(1, 4), (self.w - 2, 36)], radius=2, fill=(0, 0, 0, 70))
@@ -151,8 +162,6 @@ class MatrixRain:
         if a_val is not None:
             rows.append(('ARGON', a_val, flash_a))
         return self.render_rows(rows)
-
-        return im.convert('RGB')
 
 
 def rgb565_bytes(im):
