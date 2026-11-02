@@ -145,7 +145,10 @@ class RealtimeUsageTracker:
                 last_c = c_frac
                 last_a = a_frac
 
-                cur_state = (g_str, c_str, a_str, round(g_frac, 5), round(c_frac, 5), round(a_frac, 5))
+                g_rnd = round(g_frac, 5) if g_frac is not None else None
+                c_rnd = round(c_frac, 5) if c_frac is not None else None
+                a_rnd = round(a_frac, 5) if a_frac is not None else None
+                cur_state = (g_str, c_str, a_str, g_rnd, c_rnd, a_rnd)
                 if cur_state != last_written:
                     try:
                         DATA_FILE.write_text(
