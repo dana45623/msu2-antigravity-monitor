@@ -165,11 +165,27 @@ class AntigravityUsageProvider(UsageProvider):
     """
 
     def __init__(self, timeout=3.0):
-        import ssl
-        self.timeout = timeout
-        self._cached_endpoint = None  # (scheme, port, csrf_token)
-        self._ssl_ctx = ssl._create_unverified_context()
-
+            import ssl
+            self.timeout = timeout
+            self._cached_endpoint = None  # (scheme, port, csrf_token)
+            self._ssl_ctx = ssl._create_unverified_context()
+            self._last_discovery_attempt = 0.0
+            self._discovery_cooldown = 60.0
+            self._last_good_data = {
+                'gemini_left': 100.0,
+                'claude_left': 0.0,
+                'argon_left': 100.0,
+                'gemini_str': '100.0%',
+                'claude_str': '0.0%',
+                'argon_str': '100.0%',
+                'gemini_frac': 1.0,
+                'claude_frac': 0.0,
+                'argon_frac': 1.0,
+                'claude_reset': 'Standby',
+                'gemini_reset': 'Standby',
+                'raw_quota': {},
+            }
+    
     @staticmethod
     def _popen_hidden_kwargs():
         kwargs = {}
@@ -182,7 +198,11 @@ class AntigravityUsageProvider(UsageProvider):
         return kwargs
 
     def _discover_candidates(self):
-        import re
+        import re, time
+        now = time.time()
+        if now - self._last_discovery_attempt < self._discovery_cooldown:
+            return []
+        self._last_discovery_attempt = now
         kw = self._popen_hidden_kwargs()
         ps_cmd = (
             "Get-CimInstance Win32_Process | "
@@ -200,31 +220,58 @@ class AntigravityUsageProvider(UsageProvider):
         )
         raw = (res.stdout or '').strip()
         if not raw:
-            raise RuntimeError('找不到執行中的 Antigravity (language_server.exe)；請確認 Antigravity 已開啟。')
+            return []
 
         parsed = json.loads(raw)
         procs = parsed if isinstance(parsed, list) else [parsed]
 
-        # Map PID -> listening local ports via netstat
-        ns = subprocess.run(
-            ['netstat.exe', '-ano', '-p', 'tcp'],
-            capture_output=True,
-            text=True,
-            encoding='utf-8',
-            errors='replace',
-            timeout=5,
-            **kw,
-        )
+        # Map PID -> local ports via Get-NetTCPConnection (primary) and netstat (fallback)
         pid_ports = {}
-        for line in (ns.stdout or '').splitlines():
-            parts = line.split()
-            if len(parts) >= 5 and parts[3].upper() == 'LISTENING' and parts[1].startswith('127.0.0.1:'):
-                try:
-                    port = int(parts[1].rsplit(':', 1)[1])
-                    pid = int(parts[4])
-                    pid_ports.setdefault(pid, []).append(port)
-                except ValueError:
-                    continue
+        try:
+            pids_str = ','.join(str(int(p.get('ProcessId') or 0)) for p in procs if p.get('ProcessId'))
+            if pids_str:
+                ps_port_cmd = 'Get-NetTCOConnection -OwningProcess ' + pids_str + ' | Where-Object LocalAddress -eq 127.0.0.1 | Select-Object OwningProcess, LocalPort | ConvertTo-Json -Compress'
+                p_res = subprocess.run(
+                    ['powershell.exe', '-NoProfile', '-Command', ps_port_cmd],
+                    capture_output=True,
+                    text=True,
+                    encoding='utf-8',
+                    errors='replace',
+                    timeout=5,
+                    **kw,
+                )
+                raw_p = (p_res.stdout or '').strip()
+                if raw_p:
+                    conns = json.loads(raw_p)
+                    if isinstance(conns, dict):
+                        conns = [conns]
+                    for item in conns:
+                        o_pid = int(item.get('OwningProcess') or 0)
+                        l_port = int(item.get('LocalPort') or 0)
+                        if o_pid and l_port:
+                            pid_ports.setdefault(o_pid, []).append(l_port)
+        except Exception:
+            pass
+
+        if not pid_ports:
+            ns = subprocess.run(
+                ['netstat.exe', '-ano', '-p', 'tcp'],
+                capture_output=True,
+                text=True,
+                encoding='utf-8',
+                errors='replace',
+                timeout=5,
+                **kw,
+            )
+            for line in (ns.stdout or '').splitlines():
+                parts = line.split()
+                if len(parts) >= 5 and parts[1].startswith('127.0.0.1:'):
+                    try:
+                        port = int(parts[1].rsplit(':', 1)[1])
+                        pid = int(parts[4])
+                        pid_ports.setdefault(pid, []).append(port)
+                    except ValueError:
+                        continue
 
         candidates = []
         for p in procs:
@@ -238,7 +285,7 @@ class AntigravityUsageProvider(UsageProvider):
                 candidates.append(('https', port, csrf))
                 candidates.append(('http', port, csrf))
         if not candidates:
-            raise RuntimeError('找不到 Antigravity language_server 本地連接埠或 CSRF token。')
+            return []
         return candidates
 
     def _post_rpc(self, scheme, port, csrf, method_name):
@@ -289,7 +336,7 @@ class AntigravityUsageProvider(UsageProvider):
                 except Exception as exc:
                     last_err = exc
             if summary_data is None:
-                raise RuntimeError(f'無法連線至 Antigravity RetrieveUserQuotaSummary: {last_err}')
+                return self._last_good_data
 
         try:
             return self._parse_quota_summary_5h(summary_data)
