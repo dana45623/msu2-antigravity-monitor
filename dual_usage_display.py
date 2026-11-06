@@ -207,7 +207,7 @@ def drain_rx(s):
     return b''
 
 
-def wait_rx(s, timeout=0.4):
+def wait_rx(s, count=6, timeout=0.15):
     t0 = time.monotonic()
     buf = bytearray()
     while time.monotonic() - t0 < timeout:
@@ -215,7 +215,7 @@ def wait_rx(s, timeout=0.4):
             n = s.in_waiting
             if n:
                 buf.extend(s.read(n))
-                if len(buf) >= 6:
+                if len(buf) >= count:
                     return bytes(buf)
         except Exception:
             break
@@ -223,11 +223,50 @@ def wait_rx(s, timeout=0.4):
     return bytes(buf)
 
 
+def probe_mcu_ack(s, timeout=0.1):
+    """Probe MCU with Read_ADC_CH(9) to check if communication is framed and responsive."""
+    drain_rx(s)
+    try:
+        s.write(bytes([8, 9, 0, 0, 0, 0]))
+        resp = wait_rx(s, count=6, timeout=timeout)
+        return len(resp) >= 6 and resp[0] == 8 and resp[1] == 9
+    except Exception:
+        return False
+
+
+def align_and_handshake(s, max_steps=7):
+    """
+    6-Byte alignment and unlock handshake.
+    MSU2 protocol uses fixed 6-byte frames. If a previous session interrupted mid-packet,
+    the MCU RX ring buffer will be unaligned. We inject b'\\x00' one by one until
+    Read_ADC_CH(9) [8, 9, 0, 0, 0, 0] produces a valid [8, 9, ...] 6-byte ACK.
+    Then send b'\\x00MSNCN' to unlock the MCU and re-verify ACK.
+    """
+    try:
+        time.sleep(0.05)
+        drain_rx(s)
+        aligned = probe_mcu_ack(s, timeout=0.1)
+        if not aligned:
+            for _ in range(max_steps):
+                s.write(b'\x00')
+                time.sleep(0.01)
+                if probe_mcu_ack(s, timeout=0.08):
+                    aligned = True
+                    break
+
+        s.write(b'\x00MSNCN')
+        time.sleep(0.1)
+        drain_rx(s)
+        return probe_mcu_ack(s, timeout=0.15)
+    except Exception:
+        return False
+
+
 def wait_mcu_ready(s, timeout=0.5):
     """Send Read_ADC_CH(9) to ensure MCU completed SPI rendering buffer."""
     drain_rx(s)
     s.write(bytes([8, 9, 0, 0, 0, 0]))
-    return wait_rx(s, timeout=timeout)
+    return wait_rx(s, count=6, timeout=timeout)
 
 
 def lcd_add(s, x, y, w, h):
@@ -235,7 +274,7 @@ def lcd_add(s, x, y, w, h):
     set_xy(s, x, y)
     set_size(s, w, h)
     s.write(bytes([2, 3, 7, 0, 0, 0]))
-    return wait_rx(s, timeout=0.4)
+    return wait_rx(s, count=6, timeout=0.4)
 
 
 def compress_pixels_payload(pix):
@@ -274,17 +313,7 @@ def send_pixels(s, pix):
 
 def handshake(s, force=False):
     """Handshake with device (send \\x00MSNCN to unlock MCU)."""
-    try:
-        time.sleep(0.15)
-        rx = drain_rx(s)
-        if force or (b'MSN' in rx):
-            s.write(b'\x00MSNCN')
-            time.sleep(0.15)
-            drain_rx(s)
-            return True
-    except Exception:
-        pass
-    return False
+    return align_and_handshake(s)
 
 
 def apply_brightness(im, brightness=0.72):

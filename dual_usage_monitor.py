@@ -13,13 +13,14 @@ import serial
 
 from dual_usage_display import (
     BAUD, W, H, find_port, MatrixRain, rgb565_bytes, lcd_add, send_pixels,
-    handshake, drain_rx, apply_brightness
+    handshake, drain_rx, apply_brightness, align_and_handshake, probe_mcu_ack
 )
 from usage_provider import AntigravityUsageProvider
 
 BASE = Path(__file__).resolve().parent
 LOG_DIR = BASE
 LOCK_FILE = LOG_DIR / 'dual_usage_monitor.lock'
+STOP_SIGNAL = LOG_DIR / 'dual_usage_monitor.stop'
 DATA_FILE = LOG_DIR / 'dual_usage.json'
 LOG_FILE = LOG_DIR / 'dual_usage_monitor.log'
 MAX_LOG = 512 * 1024
@@ -215,6 +216,7 @@ def run_monitor(port=None, fps=8.0, brightness=0.72, rotate=None):
     if rotate is None:
         rotate = 180 if should_auto_rotate() else 0
 
+    STOP_SIGNAL.unlink(missing_ok=True)
     log(f'Matrix Realtime Monitor started. fps={fps}, brightness={brightness}, rotate={rotate}')
     print(f'Matrix Realtime Monitor started (PID {os.getpid()}). rotate={rotate}. Press Ctrl+C to stop.')
 
@@ -228,19 +230,39 @@ def run_monitor(port=None, fps=8.0, brightness=0.72, rotate=None):
 
     try:
         while True:
+            # Check graceful stop signal
+            if STOP_SIGNAL.exists():
+                log('Graceful stop signal detected. Exiting monitor loop...')
+                break
+
             t0 = time.monotonic()
 
-            # 1. Ensure serial connection
+            # 1. Ensure serial connection (Hot-plug self-healing & 6-byte auto-alignment)
             if ser is None:
                 try:
                     actual_port = find_port(port)
-                    ser = serial.Serial(actual_port, BAUD, timeout=0.25, write_timeout=5)
-                    drain_rx(ser)
-                    handshake(ser, force=True)
-                    log(f'Connected to serial port {actual_port} (handshake completed)')
-                    missed_acks = 0
+                    # Settle delay to avoid Windows PnP serial race condition
+                    time.sleep(0.4)
+                    s = serial.Serial(actual_port, BAUD, timeout=0.25, write_timeout=5)
+                    drain_rx(s)
+                    if align_and_handshake(s):
+                        ser = s
+                        missed_acks = 0
+                        log(f'Connected to serial port {actual_port} (aligned & handshaked)')
+                    else:
+                        log(f'Opened {actual_port} but alignment/handshake failed. Retrying...')
+                        try:
+                            s.close()
+                        except Exception:
+                            pass
+                        time.sleep(1.2)
+                        continue
+                except (serial.SerialException, OSError, WindowsError, RuntimeError) as e:
+                    # Device unplugged or COM busy; sleep smoothly and retry
+                    time.sleep(1.2)
+                    continue
                 except Exception as e:
-                    time.sleep(1.0)
+                    time.sleep(1.2)
                     continue
 
             # 2. Get latest usage state
@@ -297,14 +319,14 @@ def run_monitor(port=None, fps=8.0, brightness=0.72, rotate=None):
                         continue
                 else:
                     missed_acks = 0
-            except (serial.SerialException, OSError) as e:
-                log(f'Serial write error: {e}. Reconnecting...')
+            except (serial.SerialException, OSError, WindowsError) as e:
+                log(f'Serial communication lost ({type(e).__name__}: {e}). Switching to offline polling...')
                 try:
                     if ser: ser.close()
                 except Exception:
                     pass
                 ser = None
-                time.sleep(1.0)
+                time.sleep(1.2)
                 continue
             except Exception as e:
                 log(f'Render error: {e}')
@@ -318,10 +340,17 @@ def run_monitor(port=None, fps=8.0, brightness=0.72, rotate=None):
     finally:
         tracker.running = False
         if ser:
-            try: ser.close()
-            except Exception: pass
+            try:
+                ser.flush()
+            except Exception:
+                pass
+            try:
+                ser.close()
+            except Exception:
+                pass
         LOCK_FILE.unlink(missing_ok=True)
-        log('Matrix Monitor terminated.')
+        STOP_SIGNAL.unlink(missing_ok=True)
+        log('Matrix Monitor terminated cleanly.')
 
 
 def main():
