@@ -85,6 +85,9 @@ class RealtimeUsageTracker:
         self.gemini_frac = 1.0
         self.claude_frac = 0.0
         self.argon_frac = 1.0
+        self.gemini_in_1h = False
+        self.claude_in_1h = False
+        self.argon_in_1h = False
 
         if DATA_FILE.exists():
             try:
@@ -122,6 +125,9 @@ class RealtimeUsageTracker:
                 g_frac = data.get('gemini_frac', 1.0)
                 c_frac = data.get('claude_frac', 0.0)
                 a_frac = data.get('argon_frac')
+                g_in_1h = bool(data.get('gemini_in_1h', False))
+                c_in_1h = bool(data.get('claude_in_1h', False))
+                a_in_1h = bool(data.get('argon_in_1h', False))
 
                 with self.lock:
                     if last_g is not None and abs(g_frac - last_g) > 0.0001:
@@ -140,6 +146,9 @@ class RealtimeUsageTracker:
                     self.gemini_frac = g_frac
                     self.claude_frac = c_frac
                     self.argon_frac = a_frac
+                    self.gemini_in_1h = g_in_1h
+                    self.claude_in_1h = c_in_1h
+                    self.argon_in_1h = a_in_1h
 
                 last_g = g_frac
                 last_c = c_frac
@@ -169,7 +178,7 @@ class RealtimeUsageTracker:
                 time.sleep(self.poll_interval)
             except Exception:
                 # Back off when Antigravity is closed so startup residency uses near-zero CPU
-                time.sleep(5.0)
+                time.sleep(30.0)
 
     def get_state(self):
         with self.lock:
@@ -179,7 +188,12 @@ class RealtimeUsageTracker:
             if self.flash_g > 0: self.flash_g -= 1
             if self.flash_c > 0: self.flash_c -= 1
             if self.flash_a > 0: self.flash_a -= 1
-            return self.gemini_str, self.claude_str, self.argon_str, fg, fc, fa, self.gemini_frac, self.claude_frac, self.argon_frac
+            return (
+                self.gemini_str, self.claude_str, self.argon_str,
+                fg, fc, fa,
+                self.gemini_frac, self.claude_frac, self.argon_frac,
+                self.gemini_in_1h, self.claude_in_1h, self.argon_in_1h,
+            )
 
 
 def should_auto_rotate():
@@ -230,21 +244,30 @@ def run_monitor(port=None, fps=8.0, brightness=0.72, rotate=None):
                     continue
 
             # 2. Get latest usage state
-            g_str, c_str, a_str, flash_g, flash_c, flash_a, g_frac, c_frac, a_frac = tracker.get_state()
+            (
+                g_str, c_str, a_str,
+                flash_g, flash_c, flash_a,
+                g_frac, c_frac, a_frac,
+                g_in_1h, c_in_1h, a_in_1h,
+            ) = tracker.get_state()
 
             # Dynamic row selection:
-            # - Only models with remaining quota (frac > 0.0001) are displayed (3, 2, or 1 row).
-            # - If ALL models are exhausted (0 remaining), display all available models with their next reset date/time.
+            # - A model is kept visible if it has remaining quota (frac > 0.0001)
+            #   OR if it is exhausted but will recover within 1 hour (in_1h == True, showing countdown 'xxm').
+            # - If ALL models are exhausted (and none recovering in 1h), display all available models with their next reset date/time.
             candidates = [
-                ('GEMINI', g_str, flash_g, g_frac),
-                ('CLAUDE', c_str, flash_c, c_frac),
+                ('GEMINI', g_str, flash_g, g_frac, g_in_1h),
+                ('CLAUDE', c_str, flash_c, c_frac, c_in_1h),
             ]
             if a_str is not None and a_frac is not None:
-                candidates.append(('ARGON', a_str, flash_a, a_frac))
+                candidates.append(('ARGON', a_str, flash_a, a_frac, a_in_1h))
 
-            has_quota = [c for c in candidates if (c[3] is not None and c[3] > 0.0001)]
-            if len(has_quota) >= 1:
-                rows = [(c[0], c[1], c[2]) for c in has_quota]
+            active_rows = [
+                c for c in candidates
+                if (c[3] is not None and c[3] > 0.0001) or c[4]
+            ]
+            if len(active_rows) >= 1:
+                rows = [(c[0], c[1], c[2]) for c in active_rows]
             else:
                 # All models exhausted -> display reset times for all models
                 rows = [(c[0], c[1], c[2]) for c in candidates]

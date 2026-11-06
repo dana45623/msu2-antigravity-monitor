@@ -3,7 +3,7 @@ import os
 import subprocess
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -346,6 +346,26 @@ class AntigravityUsageProvider(UsageProvider):
             return self._parse_user_status(status_data)
 
     @staticmethod
+    def _parse_reset_info(reset_str):
+        if not reset_str:
+            return None, '--'
+        try:
+            dt = datetime.fromisoformat(reset_str.replace('Z', '+00:00'))
+            now = datetime.now(timezone.utc)
+            diff_mins = int((dt - now).total_seconds() // 60)
+            formatted = dt.astimezone().strftime('%m/%d %H:%M')
+            return diff_mins, formatted
+        except Exception:
+            return None, str(reset_str)[:14]
+
+    @classmethod
+    def _format_exhausted_display(cls, reset_str):
+        diff_mins, formatted = cls._parse_reset_info(reset_str)
+        if diff_mins is not None and 0 <= diff_mins < 60:
+            return f"{diff_mins}m", diff_mins, True
+        return formatted, diff_mins, False
+
+    @staticmethod
     def _format_reset(reset_str):
         if not reset_str:
             return '--'
@@ -359,7 +379,7 @@ class AntigravityUsageProvider(UsageProvider):
     def _parse_quota_summary_5h(cls, data):
         groups = data.get('response', {}).get('groups', [])
         if not groups:
-            raise RuntimeError('Antigravity RetrieveUserQuotaSummary 未回傳 groups 配額資訊。')
+            raise RuntimeError('Antigravity RetrieveUserQuotaSummary 沒有 groups 欄位資料')
 
         gemini_info = None
         claude_info = None
@@ -383,19 +403,23 @@ class AntigravityUsageProvider(UsageProvider):
                 target_b = bucket_5h or bucket_weekly or (buckets[0] if buckets else None)
                 if target_b:
                     raw_f = float(target_b.get('remainingFraction', 0.0))
-                    rst = cls._format_reset(target_b.get('resetTime'))
+                    raw_reset = target_b.get('resetTime')
+                    rst_disp, mins_left, in_1h = cls._format_exhausted_display(raw_reset)
                     # Treat <= 0.01 (<= 1%) as exhausted to switch to reset date before blocking
                     disabled = bool(target_b.get('disabled', False)) or raw_f <= 0.01
                     frac = 0.0 if disabled else max(0.0, min(1.0, raw_f))
                     pct = max(0, min(100, int(round(frac * 100))))
-                    disp = rst if disabled else f"{frac * 100:.1f}%"
+                    disp = rst_disp if disabled else f"{frac * 100:.1f}%"
                     argon_info = {
                         'pct': pct,
                         'frac': frac,
                         'raw': raw_f,
                         'disabled': disabled,
-                        'reset': rst,
+                        'reset': rst_disp,
+                        'raw_reset': raw_reset,
                         'display_str': disp,
+                        'mins_left': mins_left if disabled else None,
+                        'in_1h_countdown': (disabled and in_1h),
                         'bucket_id': target_b.get('bucketId'),
                     }
                 continue
@@ -405,11 +429,13 @@ class AntigravityUsageProvider(UsageProvider):
 
             raw_5h = float(bucket_5h.get('remainingFraction', 0.0))
             disabled_5h = bool(bucket_5h.get('disabled', False))
-            rst_5h = cls._format_reset(bucket_5h.get('resetTime'))
+            raw_reset_5h = bucket_5h.get('resetTime')
+            rst_5h_disp, mins_5h, in_1h_5h = cls._format_exhausted_display(raw_reset_5h)
 
             raw_weekly = float(bucket_weekly.get('remainingFraction', 0.0)) if bucket_weekly else 1.0
             disabled_weekly = bool(bucket_weekly.get('disabled', False)) if bucket_weekly else False
-            rst_weekly = cls._format_reset(bucket_weekly.get('resetTime')) if bucket_weekly else rst_5h
+            raw_reset_weekly = bucket_weekly.get('resetTime') if bucket_weekly else raw_reset_5h
+            rst_weekly_disp, mins_weekly, in_1h_weekly = cls._format_exhausted_display(raw_reset_weekly)
 
             # If weekly remainingFraction <= 1% (<= 0.01) or is disabled, model cannot be reliably used even if 5h has quota
             weekly_exhausted = disabled_5h or disabled_weekly or (bucket_weekly is not None and raw_weekly <= 0.01)
@@ -417,16 +443,22 @@ class AntigravityUsageProvider(UsageProvider):
 
             if weekly_exhausted:
                 frac = 0.0
-                active_reset = rst_weekly
-                display_str = rst_weekly
+                active_reset = rst_weekly_disp
+                display_str = rst_weekly_disp
+                mins_left = mins_weekly
+                in_1h_countdown = in_1h_weekly
             elif five_h_exhausted:
                 frac = 0.0
-                active_reset = rst_5h
-                display_str = rst_5h
+                active_reset = rst_5h_disp
+                display_str = rst_5h_disp
+                mins_left = mins_5h
+                in_1h_countdown = in_1h_5h
             else:
                 frac = max(0.0, min(1.0, raw_5h))
-                active_reset = rst_5h
+                active_reset = rst_5h_disp
                 display_str = f"{frac * 100:.1f}%"
+                mins_left = None
+                in_1h_countdown = False
 
             pct = max(0, min(100, int(round(frac * 100))))
             entry = {
@@ -436,9 +468,13 @@ class AntigravityUsageProvider(UsageProvider):
                 'raw_weekly': raw_weekly,
                 'weekly_exhausted': weekly_exhausted,
                 'reset': active_reset,
-                'reset_5h': rst_5h,
-                'reset_weekly': rst_weekly,
+                'reset_5h': rst_5h_disp,
+                'reset_weekly': rst_weekly_disp,
+                'raw_reset_5h': raw_reset_5h,
+                'raw_reset_weekly': raw_reset_weekly,
                 'display_str': display_str,
+                'mins_left': mins_left,
+                'in_1h_countdown': in_1h_countdown,
                 'bucket_id': bucket_5h.get('bucketId'),
             }
 
@@ -448,7 +484,7 @@ class AntigravityUsageProvider(UsageProvider):
                 claude_info = entry
 
         if not gemini_info and not claude_info:
-            raise RuntimeError('找不到 5h 配額分桶 (gemini-5h / 3p-5h)。')
+            raise RuntimeError('找不到 5h 配額群組 (gemini-5h / 3p-5h)')
 
         g_frac = gemini_info['frac'] if gemini_info else 1.0
         c_frac = claude_info['frac'] if claude_info else 0.0
@@ -462,6 +498,10 @@ class AntigravityUsageProvider(UsageProvider):
         g_str = gemini_info['display_str'] if gemini_info else f"{g_frac * 100:.1f}%"
         c_str = claude_info['display_str'] if claude_info else f"{c_frac * 100:.1f}%"
         a_str = argon_info['display_str'] if argon_info else None
+
+        g_in_1h = gemini_info.get('in_1h_countdown', False) if gemini_info else False
+        c_in_1h = claude_info.get('in_1h_countdown', False) if claude_info else False
+        a_in_1h = argon_info.get('in_1h_countdown', False) if argon_info else False
 
         return {
             'tier': '5H_LIMIT',
@@ -479,6 +519,9 @@ class AntigravityUsageProvider(UsageProvider):
             'claude_str': c_str,
             'gemini_str': g_str,
             'argon_str': a_str,
+            'claude_in_1h': c_in_1h,
+            'gemini_in_1h': g_in_1h,
+            'argon_in_1h': a_in_1h,
             'reset': claude_info['reset'] if claude_info else '--',
             'gemini_reset': gemini_info['reset'] if gemini_info else '--',
             'argon_reset': argon_info['reset'] if argon_info else '--',
